@@ -1,0 +1,252 @@
+import tkinter as tk
+from tkinter import ttk
+# from ttk import ttk
+import sys
+import pypyodbc as odbc
+import datetime
+from tkinter import messagebox
+import csv
+
+def getTimeNow(variant):
+    if variant=='hms':
+        time=datetime.datetime.now().strftime("%I:%M:%S %p")
+    else:
+        time=datetime.datetime.now().strftime("%I:%M %p")
+    return time
+
+print(getTimeNow('hm'))
+
+DRIVER_NAME = 'SQL SERVER'
+SERVER_NAME = 'HYUNCONSULTING'
+DATABASE_NAME = 'DEMODB'
+username = 'DEMODB_ADMIN'
+password = 'jons00580*'
+
+conn_string = f"""
+    Driver={{{DRIVER_NAME}}};
+    Server={SERVER_NAME};
+    Database={DATABASE_NAME};
+    uid={username};
+    pwd={password};
+"""
+
+def connection():
+    try:
+        conn = odbc.connect(conn_string)
+    except Exception as e:
+        print(e)
+        print('task is terminated')
+        sys.exit()
+    else:
+        return conn
+
+
+# def connection():
+#     try: 
+#         conn=pymysql.connect(
+#             host='localhost',
+#             user='root',
+#             password='',
+#             db='time_in_out_system'
+#         )
+#         return conn
+#     except Exception as e:
+#         print('error: '+e)
+#         exit()
+
+
+
+def refreshTable():
+    for data in treeview.get_children():
+        treeview.delete(data)
+    for array in read():
+        treeview.insert('',tk.END,values=array[1:],iid=array[0])
+        print(array)
+    treeview.pack()
+
+def read():
+    conn=connection()
+    cursor=conn.cursor()    
+    sql="SELECT id, e_id, name, time_in, time_out FROM dbo.python_time_in_out ORDER BY id DESC"
+    cursor.execute(sql)
+    results=cursor.fetchall()
+    conn.commit()
+    conn.close()
+    return results
+
+def save(variant,e_id,password,time):
+    conn=connection()
+    cursor=conn.cursor()
+    sql=f"SELECT * FROM dbo.python_employee where e_id = {e_id} and password = {password}"
+    cursor.execute(sql)
+    result=cursor.fetchone()
+    conn.commit()
+    conn.close()
+    if not result:
+        messagebox.showwarning("","Wrong employee id or password")
+        return False
+    name=result[2]
+    conn=connection()
+    cursor=conn.cursor()
+    sql=f"SELECT * FROM dbo.python_time_in_out where e_id = {e_id} AND time_out = '----'"
+    cursor.execute(sql)
+    result=cursor.fetchone()
+    conn.commit()
+    conn.close()
+    if variant=='Time-In':
+        if result:
+            if result[4]=='----':
+                messagebox.showwarning("","You're already time in")
+                return True
+        try:
+            conn=connection()
+            cursor=conn.cursor()
+            sql=f"INSERT INTO Python_time_in_out (e_id, name, time_in, time_out) VALUES ({e_id}, {name}, {time}, '----')"
+            cursor.execute(sql)
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            messagebox.showwarning("","Error while time in :"+e)
+        refreshTable()
+    else:
+        if not result:
+            messagebox.showwarning("","You're not yet time in")
+            return True
+        try:
+            conn=connection()
+            cursor=conn.cursor()
+            sql=f"UPDATE dbo.python_time_in_out SET time_out = {time} WHERE e_id = {e_id}"
+            cursor.execute(sql)
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            messagebox.showwarning("","Error while time out :"+e)
+        refreshTable()
+    return True
+
+def exportExcel():
+    conn=connection()
+    cursor=conn.cursor()
+    sql="SELECT e_id, name, time_in, time_out FROM dbo..python_time_in_out ORDER BY id DESC"
+    cursor.execute(sql)
+    dataraw=cursor.fetchall()
+    conn.commit()
+    conn.close()
+    date=str(datetime.datetime.now())
+    date=date.replace(' ','_')
+    date=date.replace(':','-')
+    dateFinal=date[0:16]
+    with open("time_in_out_"+dateFinal+".csv",'a',newline='') as f:
+        w=csv.writer(f,dialect='excel')
+        for record in dataraw:
+            w.writerow(record)
+    print("saved: time_in_out_"+dateFinal+".csv")
+    messagebox.showinfo("","Excel file downloaded")
+
+def clear():
+    delete=messagebox.askyesno("","Are you sure you want to delete all records?")
+    if delete:
+        conn=connection()
+        cursor=conn.cursor()
+        sql=f"DELETE FROM dbo.python_time_in_out"
+        cursor.execute(sql)
+        conn.commit()
+        conn.close()
+    refreshTable()
+
+root=tk.Tk()
+root.title("Employee Time-In-Out System")
+style=ttk.Style(root)
+root.tk.call("source","D:\Data\Python\Forest-ttk-theme-master\\forest-light.tcl")
+root.tk.call("source","D:\Data\Python\Forest-ttk-theme-master\\forest-dark.tcl")
+style.theme_use("forest-dark")
+root.geometry("580x400")
+root.resizable(False,False)
+
+frame=ttk.Frame(root)
+frame.pack()
+
+widgets_frame=ttk.LabelFrame(frame,text="Manage")
+widgets_frame.grid(row=0,column=0,padx=[10,5],pady=10,sticky="n")
+
+def renderModal(variant):
+    modal=tk.Tk()
+    modal.title(f"{variant} Modal")
+    style=ttk.Style(modal)
+    modal.tk.call("source","D:\Data\Python\Forest-ttk-theme-master\\forest-light.tcl")
+    modal.tk.call("source","D:\Data\Python\Forest-ttk-theme-master\\forest-dark.tcl")
+    style.theme_use("forest-dark")
+    modal.resizable(False,False)
+
+    modalFrame=ttk.Frame(modal)
+    modalFrame.pack()
+
+    modalWidgetsFrame=ttk.LabelFrame(modalFrame,text=variant)
+    modalWidgetsFrame.grid(row=0,column=0,padx=20,pady=20)
+
+    e_idEntry=ttk.Entry(modalWidgetsFrame)
+    e_idEntry.insert(0,"E-ID")
+    e_idEntry.bind("<FocusIn>",lambda e: e_idEntry.delete('0','end'))
+    e_idEntry.grid(row=0,column=0,padx=10,pady=[10,5],sticky="ew")
+
+    passwordEntry=ttk.Entry(modalWidgetsFrame)
+    passwordEntry.insert(0,"Password")
+    passwordEntry.bind("<FocusIn>",lambda e: passwordEntry.delete('0','end'))
+    passwordEntry.grid(row=1,column=0,padx=10,pady=[0,5],sticky="ew")
+
+    timeEntry=ttk.Entry(modalWidgetsFrame)
+    timeEntry.insert(0,getTimeNow('hm'))
+    timeEntry.grid(row=2,column=0,padx=10,pady=[0,5],sticky="ew")
+    timeEntry.config(state="disabled")
+    submitBtn=ttk.Button(modalWidgetsFrame,text='Submit',command=lambda: submit(modal,variant,str(e_idEntry.get()),str(passwordEntry.get()),str(timeEntry.get())))
+    submitBtn.grid(row=4,column=0,padx=10,pady=[0,5],sticky="nsew")
+
+def submit(modal,variant,e_id,password,time):
+    print(e_id,password,time)
+    if not(e_id and e_id.strip()) or not(password and password.strip()) or e_id=='E-ID' or password=='Password':
+        messagebox.showwarning("","Please fill up all entries")
+        return
+    if save(variant,e_id,password,time):
+        modal.destroy()
+
+buttonTimeIn=ttk.Button(widgets_frame,text="Time In",command=lambda: renderModal("Time-In"))
+buttonTimeIn.grid(row=0,column=0,padx=10,pady=[10,5],sticky="nsew")
+
+buttonTimeOut=ttk.Button(widgets_frame,text="Time Out",command=lambda: renderModal("Time-Out"))
+buttonTimeOut.grid(row=1,column=0,padx=10,pady=[0,5],sticky="nsew")
+
+buttonExcel=ttk.Button(widgets_frame,text="Download Excel",command=exportExcel)
+buttonExcel.grid(row=2,column=0,padx=10,pady=[0,5],sticky="nsew")
+
+buttonClear=ttk.Button(widgets_frame,text="Clear Data",command=clear)
+buttonClear.grid(row=3,column=0,padx=10,pady=[0,5],sticky="nsew")
+
+treeFrame=ttk.Frame(frame)
+treeFrame.grid(row=0,column=1,padx=[5,10],pady=10,sticky="n",ipadx=5,ipady=5)
+
+treeScroll=ttk.Scrollbar(treeFrame)
+treeScroll.pack(side="right",fill="y")
+
+cols=("E-ID","Name","Time In","Time Out")
+treeview=ttk.Treeview(treeFrame,show="headings",yscrollcommand=treeScroll.set,columns=cols,height=13)
+treeview.heading("E-ID",text="E-ID",anchor="w")
+treeview.heading("Name",text="Name",anchor="w")
+treeview.heading("Time In",text="Time In",anchor="w")
+treeview.heading("Time Out",text="Time Out",anchor="w")
+treeview.column("E-ID",width=50)
+treeview.column("Name",width=110)
+treeview.column("Time In",width=70)
+treeview.column("Time Out",width=70)
+
+refreshTable()
+treeScroll.config(command=treeview.yview)
+
+def updateClock():
+    realTimeClock.config(text=getTimeNow('hms'))
+    realTimeClock.after(1000,updateClock)
+
+realTimeClock=ttk.Label(text=getTimeNow('hms'),font=('Arial BOLD',20))
+realTimeClock.pack(pady=[0,20])
+realTimeClock.after(1000,updateClock)
+
+root.mainloop()
